@@ -24,8 +24,8 @@ CPU 코어(`CPU_RV32I`)는 제어 유닛(Control Unit)과 데이터 패스(DataP
 * **Single-Cycle Microarchitecture:** 모든 명령어가 1 클럭 사이클 내에 Fetch, Decode, Execute, Memory, Writeback 단계를 완료합니다.
 * **Modular Control Logic:** 명령어의 Opcode를 분석하여 ALU 제어, 레지스터 쓰기, 분기 신호 등을 생성하는 9-bit 제어 신호 벡터를 생성합니다.
 * **Versatile Memory Subsystem:**
-    * [cite_start]**ROM:** 초기화된 헥사 코드를 통한 프로그램 실행[cite: 140].
-    * [cite_start]**RAM:** Byte(8-bit), Half-word(16-bit), Word(32-bit) 단위의 정밀한 읽기/쓰기 및 부호 확장(Sign Extension) 지원[cite: 675].
+    * **ROM:** 초기화된 헥사 코드를 통한 프로그램 실행.
+    * **RAM:** Byte(8-bit), Half-word(16-bit), Word(32-bit) 단위의 정밀한 읽기/쓰기 및 부호 확장(Sign Extension) 지원.
 
 ---
 
@@ -37,10 +37,10 @@ MCU는 **Harvard Architecture**와 유사하게 명령어 버스와 데이터 �
 ```mermaid
 graph TD
     subgraph "MCU (Micro Controller Unit)"
-        ROM["Instruction Memory<br>(ROM)"] -->|instrCode| CPU
-        CPU["RISC-V CPU Core<br>(RV32I)"] -->|instrAddr| ROM
+        ROM["Instruction Memory (ROM)"] -->|instrCode| CPU
+        CPU["RISC-V CPU Core (RV32I)"] -->|instrAddr| ROM
         
-        CPU -->|busAddr| RAM["Data Memory<br>(RAM)"]
+        CPU -->|busAddr| RAM["Data Memory (RAM)"]
         CPU -->|busWData| RAM
         CPU -->|we / strb| RAM
         RAM -->|busRData| CPU
@@ -69,8 +69,7 @@ graph LR
 ```
 
 -----
-
-## 💻 3. 상세 설계 명세 (Design Details)
+## 💻 3. Module Design Details
 
 ### 3.1 Control Unit Design
 
@@ -97,23 +96,107 @@ graph LR
 
 -----
 
-## 📜 4. 지원 명령어 셋 (Supported ISA)
+## 💻 4. 상세 기능 명세 및 동작 원리 (Detailed Specification)
 
-본 프로세서는 `defines.sv`에 정의된 다음 명령어들을 완벽하게 지원합니다.
+각 명령어 타입별 \*\*데이터 흐름(Data Flow)\*\*과 **제어 신호(Control Signal)** 동작 방식입니다.
 
-| Instruction Type | Opcode | Operations | Functionality |
-| :---: | :---: | :--- | :--- |
-| **Arithmetic (R)** | `0110011` | ADD, SUB, SLL, SLT, XOR, SRL, SRA, OR, AND | 레지스터 간 연산 |
-| **Arithmetic (I)** | `0010011` | ADDI, SLTI, XORI, ORI, ANDI, SLLI, SRLI, SRAI | 레지스터-상수 연산 |
-| **Load (I)** | `0000011` | LB, LH, LW, LBU, LHU | 메모리 데이터 로드 |
-| **Store (S)** | `0100011` | SB, SH, SW | 메모리 데이터 저장 |
-| **Branch (B)** | `1100011` | BEQ, BNE, BLT, BGE, BLTU, BGEU | 조건부 분기 |
-| **Jump (J/I)** | `1101111`<br>`1100111` | JAL, JALR | 함수 호출 및 점프 |
-| **Upper (U)** | `0110111`<br>`0010111` | LUI, AUIPC | 상위 20비트 로드 |
+### 4.1 R-Type (Register-Register)
+
+레지스터 간의 산술 및 논리 연산을 수행합니다.
+
+  * **Instructions:** `ADD`, `SUB`, `SLL`, `SLT`, `XOR`, `SRL`, `OR`, `AND` 등.
+  * **Data Flow:**
+    1.  ROM에서 명령어를 인출합니다.
+    2.  Register File에서 `rs1`, `rs2` 데이터를 읽어 ALU로 전달합니다.
+    3.  ALU 연산 결과가 MUX(0번 입력)를 통해 다시 Register File(`rd`)에 저장됩니다.
+  * **Control Signals:**
+      * `reg_wr_en = 1`: 연산 결과를 저장하기 위해 활성화.
+      * `aluSrcMuxSel = 0`: 두 번째 피연산자로 레지스터값(`rs2`) 선택.
+      * `RegWdataSel = 0`: ALU 결과를 저장 데이터로 선택.
+
+### 4.2 I-Type (Immediate / Load)
+
+상수 연산 또는 메모리 로드 명령을 수행합니다.
+
+  * **Instructions:** `ADDI`, `ANDI`, `LB`, `LW`, `JALR` 등.
+  * **Data Flow (Arithmetic):**
+    1.  `rs1` 값과 확장된 `imm` 값이 ALU에서 연산됩니다.
+    2.  결과가 Register File에 저장됩니다.
+  * **Data Flow (Load):**
+    1.  ALU에서 `rs1 + imm` 주소를 계산합니다.
+    2.  RAM의 해당 주소 데이터를 읽어 MUX(1번 입력)를 통해 Register File에 저장합니다.
+  * **Control Signals (Load):**
+      * `reg_wr_en = 1`: 데이터 저장을 위해 활성화.
+      * `aluSrcMuxSel = 1`: 주소 계산을 위해 상수(`imm`) 선택.
+      * `RegWdataSel = 1`: 메모리에서 읽은 데이터(`busRData`) 선택.
+
+### 4.3 S-Type (Store)
+
+레지스터의 값을 메모리에 저장합니다.
+
+  * **Instructions:** `SB` (Byte), `SH` (Half), `SW` (Word).
+  * **Data Flow:**
+    1.  `rs1 + imm`을 통해 저장할 메모리 주소를 계산합니다.
+    2.  `rs2`의 값을 RAM의 데이터 포트로 전달합니다.
+  * **Control Signals:**
+      * `d_wr_en = 1`: RAM 쓰기 활성화.
+      * `aluSrcMuxSel = 1`: 주소 계산용 상수 선택.
+
+### 4.4 B-Type (Branch)
+
+조건부 분기를 수행합니다.
+
+  * **Instructions:** `BEQ`, `BNE`, `BLT`, `BGE` 등.
+  * **Data Flow:**
+    1.  비교기(Comparator)가 `rs1`과 `rs2`를 비교하여 `b_taken` 신호를 생성합니다.
+    2.  `b_taken`이 참이면 `PC = PC + imm`, 거짓이면 `PC = PC + 4`로 업데이트됩니다.
+  * **Control Signals:**
+      * `branch = 1`: 분기 명령어임을 알림.
+      * `aluSrcMuxSel = 0`: 비교를 위해 레지스터값 선택.
+
+### 3.5 U-Type (Upper Immediate)
+
+상위 20비트 상수를 처리합니다.
+
+  * **Instructions:** `LUI`, `AUIPC`.
+  * **Data Flow:**
+    1.  20비트 `imm`을 32비트로 확장(하위 12비트 0)합니다.
+    2.  `LUI`: 확장된 값을 그대로 저장. `AUIPC`: `PC + imm` 값을 저장.
+  * **Control Signals (LUI):**
+      * `RegWdataSel = 2`: ALU를 거치지 않은 Immediate 값 선택.
+
+### 4.6 J-Type (Jump)
+
+무조건 점프 및 복귀 주소 저장을 수행합니다.
+
+  * **Instructions:** `JAL`, `JALR`.
+  * **Data Flow:**
+    1.  점프할 주소(`PC + imm` 또는 `rs1 + imm`)를 계산하여 PC를 업데이트합니다.
+    2.  복귀 주소(`PC + 4`)를 Register File에 저장합니다.
+  * **Control Signals:**
+      * `jal = 1`: PC 점프 활성화.
+      * `RegWdataSel = 4`: `PC + 4` 값을 저장 데이터로 선택.
 
 -----
 
-## 📂 5. 디렉토리 구조 (Directory Structure)
+## 📜 5. 지원 명령어 셋 (Supported ISA)
+
+`defines.sv`에 정의된 지원 명령어 목록입니다.
+
+| Type | Opcode | Instructions | Description |
+| :---: | :---: | :--- | :--- |
+| **R-Type** | `0110011` | ADD, SUB, SLL, SLT, SLTU, XOR, SRL, SRA, OR, AND | Register-Register 산술/논리 연산 |
+| **I-Type** | `0010011` | ADDI, SLTI, SLTIU, XORI, ORI, ANDI, SLLI, SRLI, SRAI | Immediate 산술/논리 연산 |
+| **I-Type** | `0000011` | LB, LH, LW, LBU, LHU | 메모리 로드 (Load) |
+| **I-Type** | `1100111` | JALR | 레지스터 기반 점프 |
+| **S-Type** | `0100011` | SB, SH, SW | 메모리 저장 (Store) |
+| **B-Type** | `1100011` | BEQ, BNE, BLT, BGE, BLTU, BGEU | 조건부 분기 (Branch) |
+| **U-Type** | `0110111` | LUI, AUIPC | 상위 비트 로드 |
+| **J-Type** | `1101111` | JAL | 점프 및 링크 |
+
+-----
+
+## 📂 6. 디렉토리 구조 (Directory Structure)
 
 ```text
 📦 RISCV-RV32I-Project
@@ -137,19 +220,16 @@ graph LR
 
 -----
 
-## 🚀 6. 시뮬레이션 및 검증 (Simulation)
+## 🚀 7. 시뮬레이션 및 검증 (Simulation)
 
 ### 테스트벤치 개요 (`tb_rv32i.sv`)
 
 테스트벤치는 `MCU` 모듈을 인스턴스화하고 클럭(`clk`)과 리셋(`reset`) 신호를 공급합니다.
 [cite_start]`ROM.sv` 파일 내부에는 검증을 위한 어셈블리 코드(ADD, SUB, AND, OR, Load/Store, Jump 등)가 초기화되어 있어, 시뮬레이션 시작과 동시에 프로그램이 실행됩니다 [cite: 143-162].
 
-
 -----
 
-\<div align="center"\>
-\<i\>Designed with SystemVerilog for RISC-V Architecture Study\</i\>
-\</div\>
+> *Designed with SystemVerilog for RISC-V Architecture Study*
 
 ```
 ```

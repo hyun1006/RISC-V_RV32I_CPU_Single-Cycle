@@ -154,7 +154,7 @@ graph LR
       * `branch = 1`: 분기 명령어임을 알림.
       * `aluSrcMuxSel = 0`: 비교를 위해 레지스터값 선택.
 
-### 3.5 U-Type (Upper Immediate)
+### 4.5 U-Type (Upper Immediate)
 
 상위 20비트 상수를 처리합니다.
 

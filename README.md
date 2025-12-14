@@ -177,11 +177,8 @@ graph LR
 
 프로젝트 상세 구조 및 구현 결과는 아래 보고서를 통해 확인하실 수 있습니다.
 
-\<div\>
-
 [![PDF Report](https://img.shields.io/badge/📄_PDF_Report-View_Document-FF0000?style=for-the-badge&logo=adobeacrobatreader&logoColor=white)](https://github.com/seokhyun-hwang/files/blob/main/RISC-V_RV32I_CPU_Single-Cycle.pdf)
 
-\</div\>
 
 <br>
 
@@ -220,6 +217,3 @@ graph LR
 -----
 
 Copyright ⓒ 2025. SEOKHYUN HWANG. All rights reserved.
-
-```
-```
